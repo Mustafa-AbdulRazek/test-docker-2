@@ -1,0 +1,58 @@
+---
+- name: DevOps Dashboard Auto-Deploy
+  hosts: local
+  vars:
+    project_path: "/mnt/d/downloads/s/devops-dashboard"
+    github_repo: "git@github.com:Mustafa-AbdulRazek/devops-dashboard.git"
+    branch: "main"
+
+  tasks:
+
+    - name: Ensure git is installed
+      apt:
+        name: git
+        state: present
+      become: yes
+
+    - name: Ensure docker is installed
+      apt:
+        name: docker.io
+        state: present
+      become: yes
+
+    - name: Ensure docker-compose is installed
+      apt:
+        name: docker-compose
+        state: present
+      become: yes
+
+    - name: Clone or update project repository
+      git:
+        repo: "{{ github_repo }}"
+        dest: "{{ project_path }}"
+        version: "{{ branch }}"
+        force: yes
+        update: yes
+
+    - name: Build Docker images
+      community.docker.docker_compose:
+        project_src: "{{ project_path }}"
+        build: yes
+        state: present
+
+    - name: Run docker-compose
+      community.docker.docker_compose:
+        project_src: "{{ project_path }}"
+        state: present
+        restarted: yes
+
+    - name: Optional - Trigger Netlify deploy
+      uri:
+        url: "https://api.netlify.com/api/v1/sites/{{ netlify_site_id }}/deploys"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ netlify_auth }}"
+          Content-Type: "application/zip"
+        body: "@{{ project_path }}/index.html"
+        body_format: raw
+      when: netlify_site_id is defined and netlify_auth is defined
