@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevOps Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-gray-900 text-white">
+  <main class="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+
+    <!-- LEFT SIDEBAR (Members, Add Member, Add Event, Add Post) -->
+    <aside class="space-y-6">
+
+      <!-- Members Panel -->
+      <div class="glass p-4 rounded-2xl card">
+        <h4 class="font-semibold">Members</h4>
+        <ul id="membersList" class="mt-3 space-y-2 text-sm"></ul>
+        <button onclick="openAddMember()" class="mt-2 w-full px-3 py-2 rounded bg-white/10 hover:bg-white/20">Add Member</button>
+      </div>
+
+      <!-- Add Event Panel -->
+      <div class="glass p-4 rounded-2xl card">
+        <h4 class="font-semibold">Events</h4>
+        <ul id="eventsList" class="mt-3 space-y-2 text-sm"></ul>
+        <button onclick="openAddEvent()" class="mt-2 w-full px-3 py-2 rounded bg-white/10 hover:bg-white/20">Add Event</button>
+      </div>
+
+      <!-- Add Post Panel -->
+      <div class="glass p-4 rounded-2xl card">
+        <h4 class="font-semibold">Posts</h4>
+        <ul id="postsList" class="mt-3 space-y-2 text-sm"></ul>
+        <button onclick="openAddPost()" class="mt-2 w-full px-3 py-2 rounded bg-white/10 hover:bg-white/20">Add Post</button>
+      </div>
+
+    </aside>
+
+    <!-- CENTER: EMPTY OR MAIN CONTENT (if any) -->
+    <section class="space-y-6">
+      <div class="glass p-6 rounded-2xl text-center text-gray-300">
+        <h2 class="text-xl font-semibold">DevOps Dashboard</h2>
+        <p class="text-sm mt-2">Manage members, events, posts, and run automated DevOps checks.</p>
+      </div>
+    </section>
+
+    <!-- RIGHT SIDEBAR -->
+    <aside class="space-y-6">
+
+      <!-- Resources Snapshot -->
+      <div class="glass p-4 rounded-2xl card">
+        <h4 class="font-semibold">Resources Snapshot</h4>
+        <div id="snapshot" class="mt-3 text-sm text-gray-300"></div>
+      </div>
+
+      <!-- NEW FEATURE: Automated Quality & Security Checks -->
+      <div class="glass p-4 rounded-2xl card">
+        <h4 class="font-semibold">Automated Quality & Security Checks</h4>
+        <p class="text-xs text-gray-400 mt-2">Run quick scans on members, events, posts, and stored data.</p>
+
+        <div class="mt-3 space-y-2 text-sm">
+          <button id="runQuickChecks" class="w-full px-3 py-2 rounded bg-white/6 hover:bg-white/10">Run Quick Checks</button>
+          <button id="runDeepScan" class="w-full px-3 py-2 rounded bg-gradient-to-r from-rose-500 to-orange-400">Run Full Scan</button>
+        </div>
+
+        <div id="checksOutput" class="mt-3 text-xs text-gray-300 whitespace-pre-line"></div>
+      </div>
+
+      <!-- Events Panel -->
+      <div class="glass p-4 rounded-2xl card">
+        <h4 class="font-semibold">Upcoming Events</h4>
+        <ul id="asideEvents" class="mt-3 space-y-2 text-sm"></ul>
+      </div>
+
+    </aside>
+  </main>
+
+
+  <!-- MODAL -->
+  <div id="modal" class="fixed inset-0 bg-black/70 backdrop-blur hidden flex items-center justify-center p-6">
+    <div id="modalContent" class="glass p-6 rounded-2xl w-full max-w-lg"></div>
+  </div>
+
+
+  <!-- MAIN SCRIPT -->
+  <script>
+    /* -------------------------------------------------------
+      IndexedDB Setup (members, events, posts)
+    ------------------------------------------------------- */
+    const dbName = "DevOpsDB";
+    const storeNames = ["members", "events", "posts"];
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(dbName, 1);
+
+        request.onupgradeneeded = event => {
+          const db = event.target.result;
+          storeNames.forEach(store => {
+            if (!db.objectStoreNames.contains(store)) {
+              db.createObjectStore(store, { keyPath: "id", autoIncrement: true });
+            }
+          });
+        };
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function addItem(store, data) {
+      const db = await openDB();
+      return new Promise(resolve => {
+        const tx = db.transaction(store, "readwrite");
+        tx.objectStore(store).add(data);
+        tx.oncomplete = resolve;
+      });
+    }
+
+    async function getAll(store) {
+      const db = await openDB();
+      return new Promise(resolve => {
+        const tx = db.transaction(store, "readonly");
+        const req = tx.objectStore(store).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+      });
+    }
+
+
+    /* -------------------------------------------------------
+      UI Helper Functions
+    ------------------------------------------------------- */
+    function escapeHtml(text) {
+      return text.replace(/[&<>\"']/g, t => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[t]));
+    }
+
+    function showModal(html) {
+      document.getElementById("modalContent").innerHTML = html;
+      document.getElementById("modal").classList.remove("hidden");
+    }
+
+    document.getElementById("modal").addEventListener("click", e => {
+      if (e.target.id === "modal") e.target.classList.add("hidden");
+    });
+
+
+    /* -------------------------------------------------------
+      NEW FEATURE: Quick Quality Checks
+    ------------------------------------------------------- */
+    document.getElementById("runQuickChecks").addEventListener("click", async () => {
+      const members = await getAll("members");
+      const events = await getAll("events");
+
+      let report = "🔍 Quick Scan Results:\n\n";
+
+      report += `Members: ${members.length}\n`;
+      report += `- Missing GitHub usernames: ${members.filter(m => !m.github).length}\n`;
+      report += `- Empty names: ${members.filter(m => !m.name?.trim()).length}\n\n`;
+
+      report += `Events: ${events.length}\n`;
+      report += `- Past events: ${events.filter(e => new Date(e.date) < new Date()).length}\n`;
+      report += `- Missing descriptions: ${events.filter(e => !e.description?.trim()).length}\n`;
+
+      document.getElementById("checksOutput").textContent = report;
+    });
+
+
+    /* -------------------------------------------------------
+      NEW FEATURE: Deep Security Scan
+    ------------------------------------------------------- */
+    document.getElementById("runDeepScan").addEventListener("click", async () => {
+      const members = await getAll("members");
+      const events = await getAll("events");
+      const posts = await getAll("posts");
+
+      let issues = [];
+
+      members.forEach(m => {
+        if (m.github && !/^[a-zA-Z0-9-]+$/.test(m.github)) issues.push(`Invalid GitHub username: ${m.github}`);
+      });
+
+      events.forEach(ev => {
+        if (isNaN(Date.parse(ev.date))) issues.push(`Invalid event date format: ${ev.title}`);
+      });
+
+      posts.forEach(p => {
+        if (/<script|onerror|onload/i.test(p.content)) issues.push(`Possible unsafe content in post ID ${p.id}`);
+      });
+
+      const html = `
+        <h3 class="text-lg font-semibold">Full System Scan</h3>
+        <p class="text-xs text-gray-400 mb-3">Checked members, events, posts, and security patterns.</p>
+        <div class="p-3 bg-white/5 rounded max-h-64 overflow-auto text-sm">
+          ${issues.length === 0 
+            ? "✔ No issues detected. Everything looks good!" 
+            : issues.map(i => `⚠ ${escapeHtml(i)}`).join("<br>")}
+        </div>
+      `;
+
+      showModal(html);
+    });
+
+  </script>
+</body>
+</html>
